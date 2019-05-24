@@ -1,9 +1,0 @@
-<litepal>
-    <dbname value = 'talang_weather'/>
-    <version value = '1'/>
-    <list>
-        <mapping class = 'com.example.talangweather.db.Province'/>
-        <mapping class = 'com.example.talangweather.db.City'/>
-        <mapping class = 'com.example.talangweather.db.County'/>
-    </list>
-</litepal>
