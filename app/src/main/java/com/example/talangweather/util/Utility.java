@@ -84,13 +84,26 @@ public class Utility {
      */
     public static Weather handleWeatherResponse(String response){
         try{
-            JSONObject jsonObject = new JSONObject(response);
-            JSONArray jsonArray = jsonObject.getJSONArray("HeWeather");
-            String weatherContent = jsonArray.getJSONArray(0).toString();
-            return new Gson().fromJson(weatherContent, Weather.class);
+       //     String result = JSONTokener(response);
+//            JSONObject jsonObject = new JSONObject(response);
+//            JSONArray jsonArray = jsonObject.getJSONArray("HeWeather");
+//            String weatherContent = jsonArray.getJSONArray(0).toString();
+//            return new Gson().fromJson(weatherContent, Weather.class);
+            Gson gson = new Gson();
+            Weather weather = gson.fromJson(response, Weather.class);
+            return  weather;
         }catch (Exception e){
             e.printStackTrace();
         }
         return null;
     }
+
+    public static String JSONTokener(String str_json) {
+        // consume an optional byte order mark (BOM) if it exists
+        if (str_json != null && str_json.startsWith("\ufeff")) {
+            str_json = str_json.substring(1);
+        }
+        return str_json;
+    }
+
 }
