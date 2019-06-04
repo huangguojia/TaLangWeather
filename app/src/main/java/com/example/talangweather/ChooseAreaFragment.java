@@ -3,18 +3,24 @@ package com.example.talangweather;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.CallSuper;
 import android.support.v4.app.Fragment;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import com.example.talangweather.db.City;
 import com.example.talangweather.db.County;
 import com.example.talangweather.db.Province;
+import com.example.talangweather.gson.CitySearch;
 import com.example.talangweather.util.HttpUtil;
 import com.example.talangweather.util.Utility;
+
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.Response;
@@ -23,11 +29,18 @@ import org.litepal.crud.DataSupport;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import com.example.talangweather.util.KeybordUtil;
+
+import static android.content.Context.INPUT_METHOD_SERVICE;
 
 public class ChooseAreaFragment extends Fragment {
+    private FragmentVisibleListener onVisibleListener;
     private TextView titleText;
     private Button backButton;
     private  ListView listView;
+    private  EditText searchText;
     public static final int LEVEL_PROVINCE = 0;
     public static final int LEVEL_CITY = 1;
     public static final int LEVEL_COUNY = 2;
@@ -37,9 +50,12 @@ public class ChooseAreaFragment extends Fragment {
     private List<Province> provinceList;
     private List<City> cityList;
     private List<County> countyList;
+    private List<CitySearch.HeWeather6Bean.BasicBean> searchCityList = new ArrayList<>();
     private Province selectedProvince;
     private City selectedCity;
     private int currentLevel;
+    private boolean ifSearch;
+    private boolean isVisible;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -47,13 +63,50 @@ public class ChooseAreaFragment extends Fragment {
 
         View view = inflater.inflate(R.layout.choose_area, container, false);
         ButterKnife.bind(this,view);
+        searchText=(EditText)view.findViewById(R.id.search_text);
         titleText = (TextView)view.findViewById(R.id.title_text);
         backButton = (Button)view.findViewById(R.id.back_button);
         listView = (ListView)view.findViewById(R.id.list_view);
-        adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, dataList);
-        listView.setAdapter(adapter);
+        initView();
         return view;
     }
+    @CallSuper
+    protected  void initView(){
+
+        adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, dataList);
+        listView.setAdapter(adapter);
+
+        searchText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    searchCity(s.toString());
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+
+            }
+        });
+
+        //搜索框获取和失去焦点关闭和打开软键盘
+        searchText.setOnFocusChangeListener(new android.view.View.
+                OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) {
+             //       KeybordUtil.showSoftInput();
+                } else {
+                    KeybordUtil.closeKeybord(getActivity());
+                }
+            }
+        });
+    }
+
     @Override
     public void onActivityCreated(Bundle savedInstanceState){
         super.onActivityCreated(savedInstanceState);
@@ -67,11 +120,24 @@ public class ChooseAreaFragment extends Fragment {
                     selectedCity = cityList.get(position);
                     queryCounties();
                 }else if(currentLevel == LEVEL_COUNY){
-                    String weatherId = countyList.get(position).getWeatherId();
-                    Intent intent = new Intent(getActivity(),WeatherActivity.class);
-                    intent.putExtra("weather_Id",weatherId);
-                    startActivity(intent);
-                    getActivity().finish();
+                    String weatherId;
+                    if (ifSearch){
+                        weatherId = searchCityList.get(position).getCid();
+                    }else {
+                        weatherId   = countyList.get(position).getWeatherId();
+                    }
+
+                    if (getActivity() instanceof MyMainActivity) {
+                        Intent intent = new Intent(getActivity(), WeatherActivity.class);
+                        intent.putExtra("weather_Id", weatherId);
+                        startActivity(intent);
+                        getActivity().finish();
+                    }else if(getActivity() instanceof WeatherActivity){
+                        WeatherActivity weatherActivity = (WeatherActivity)getActivity();
+                        weatherActivity.drawerLayout.closeDrawers();
+                        weatherActivity.swipeRefreshLayout.setRefreshing(true);
+                        weatherActivity.requestWeather(weatherId);
+                    }
                 }
             }
         });
@@ -224,4 +290,70 @@ public class ChooseAreaFragment extends Fragment {
             progressDialog.dismiss();
         }
     }
+
+    private void searchCity(String searchText){
+        if (searchText == null || searchText.equals("")){
+            ifSearch = false;
+            queryProvinces();
+        }else {
+            ifSearch = true;
+            dataList.clear();
+            String cityUrl = "https://search.heweather.net/find?location="+searchText+"&key=0fe3257e24f848889d58733a4ea361ed&number=20";
+            HttpUtil.sendOkHttpRequest(cityUrl, new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    Toast.makeText(getActivity(),"获取城市信息失败",Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    String cityinfo = response.body().string();
+                    final CitySearch cities = Utility.handleCityResponse(cityinfo);
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (cities != null && "ok".equals(cities.getHeWeather6().get(0).getStatus())){
+                                for (CitySearch.HeWeather6Bean.BasicBean city : cities.getHeWeather6().get(0).getBasic()){
+                                    searchCityList.add(city);
+                                    dataList.add(city.getLocation());
+                                }
+                            }
+                            //只能放在RunOnUIThread里，否则会比异步查询先调用
+                            adapter.notifyDataSetChanged();
+                            listView.setSelection(0);
+                            currentLevel = LEVEL_COUNY;
+                        }
+                    });
+                }
+            });
+
+        }
+    }
+
+    public FragmentVisibleListener getOnVisibleListener() {
+        return onVisibleListener;
+    }
+
+    public void setOnVisibleListener(FragmentVisibleListener onVisibleListener) {
+        this.onVisibleListener = onVisibleListener;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (onVisibleListener != null) {
+            onVisibleListener.onOpened();
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (onVisibleListener != null) {
+            onVisibleListener.onClosed();
+        }
+    }
+
+
+
 }

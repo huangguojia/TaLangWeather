@@ -4,6 +4,7 @@ import android.text.TextUtils;
 import com.example.talangweather.db.City;
 import com.example.talangweather.db.County;
 import com.example.talangweather.db.Province;
+import com.example.talangweather.gson.CitySearch;
 import com.example.talangweather.gson.Weather;
 import com.google.gson.Gson;
 import org.json.JSONArray;
@@ -97,6 +98,18 @@ public class Utility {
         }
         return null;
     }
+
+    public static CitySearch handleCityResponse(String response){
+        try{
+            Gson gson = new Gson();
+            CitySearch Cities = gson.fromJson(response, CitySearch.class);
+            return  Cities;
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return null;
+    }
+
 
     public static String JSONTokener(String str_json) {
         // consume an optional byte order mark (BOM) if it exists

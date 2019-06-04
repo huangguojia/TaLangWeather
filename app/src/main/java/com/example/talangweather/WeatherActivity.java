@@ -1,12 +1,19 @@
 package com.example.talangweather;
 
+import android.support.v4.app.Fragment;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
+import android.support.v4.view.GravityCompat;
+import android.support.v4.widget.DrawerLayout;
+import android.support.v4.widget.SwipeRefreshLayout;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.*;
@@ -14,8 +21,11 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 import com.bumptech.glide.Glide;
 import com.example.talangweather.gson.Weather;
+import com.example.talangweather.service.AutoUpdateService;
 import com.example.talangweather.util.HttpUtil;
+import com.example.talangweather.util.StatusBarUtil;
 import com.example.talangweather.util.Utility;
+
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.Response;
@@ -23,9 +33,12 @@ import okhttp3.Response;
 import java.io.IOException;
 
 public class WeatherActivity extends AppCompatActivity {
-
-
-
+    private RelativeLayout titleLayout;
+    private  LinearLayout weather_linearlayout;
+    public DrawerLayout drawerLayout;
+    private Button navButton;
+    private String mWeatherId;
+    public SwipeRefreshLayout swipeRefreshLayout;
     private ImageView bingPicImg;
     private ScrollView weatherLayout;
     private TextView titleCity;
@@ -48,7 +61,10 @@ public class WeatherActivity extends AppCompatActivity {
         }
         setContentView(R.layout.activity_weather);
         ButterKnife.bind(this);
+        drawerLayout = (DrawerLayout)findViewById(R.id.drawyer_layout);
+        navButton = (Button)findViewById(R.id.nav_button);
         RelativeLayout titleView = (RelativeLayout) findViewById(R.id.title_layout);
+        swipeRefreshLayout = (SwipeRefreshLayout)findViewById(R.id.swiperefresh_layout);
         titleCity = (TextView) titleView.findViewById(R.id.title_city);
         titleUpdateTime = (TextView) findViewById(R.id.title_update_time);
         degreeText = (TextView) findViewById(R.id.degree_text);
@@ -59,6 +75,9 @@ public class WeatherActivity extends AppCompatActivity {
         forecastLayout = (LinearLayout) findViewById(R.id.forecast_layout);
         weatherLayout = (ScrollView) findViewById(R.id.weather_layout);
         bingPicImg = (ImageView) findViewById(R.id.bing_pic_img);
+        weather_linearlayout = (LinearLayout)findViewById(R.id.weather_linearlyaout);
+        titleLayout = (RelativeLayout)findViewById(R.id.title_layout) ;
+
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String bingPic = prefs.getString("bing_pic", null);
         if (bingPic != null) {
@@ -66,26 +85,47 @@ public class WeatherActivity extends AppCompatActivity {
         } else {
             loadBingPic();
         }
-//        String weatherString = prefs.getString("weather", null);
-//        if (weatherString != null){
-//            Weather weather = Utility.handleWeatherResponse(weatherString);
-//            showWeatherInfo(weather);
-//        }else {
-//    }
+        navButton.setOnClickListener(new View.OnClickListener(){
+            @Override
+            public void onClick(View view){
+                drawerLayout.openDrawer(GravityCompat.START);
+            }
+        });
+        String weatherString = prefs.getString("weather", null);
+        if (weatherString != null){
+            Weather weather = Utility.handleWeatherResponse(weatherString);
+            mWeatherId = weather.getHeWeather6().get(0).getBasic().getCid();
+            showWeatherInfo(weather);
+        }else {
             //无缓存时去服务器查询天气
-            String weatherId = getIntent().getStringExtra("weather_Id");
-            //可知butterknife的实例化在ncreate之后。
-       //     weatherLayout.setVisibility(View.INVISIBLE);
-            requestWeather(weatherId);
+            mWeatherId = getIntent().getStringExtra("weather_Id");
+            weatherLayout.setVisibility(View.INVISIBLE);
+            requestWeather(mWeatherId);
         }
+        swipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                Log.d("sendoh","进入");
+                requestWeather(mWeatherId);
+            }
+        });
 
+        }
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        //设置第一个view距离状态栏的高度；
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) titleLayout.getLayoutParams();
+        params.setMargins(0,StatusBarUtil.getStatusBarHeight(this),0,0);
+        titleLayout.setLayoutParams(params);
+    }
 
     /**
      * 根据天气id请求城市天气信息
      */
     public void requestWeather(final String weatherId){
         String weatherUrl = "https://free-api.heweather.net/s6/weather/now?location="+
-                weatherId + "&key=f363bfc2ae2f4c46b77de79d1188c78c";
+                weatherId + "&key=d65273a0eff043b5b600ff91a475adcd";
                 HttpUtil.sendOkHttpRequest(weatherUrl, new Callback() {
                     @Override
                     public void onFailure(Call call, IOException e) {
@@ -93,6 +133,7 @@ public class WeatherActivity extends AppCompatActivity {
                             @Override
                             public void run() {
                                 Toast.makeText(WeatherActivity.this,"获取天气信息失败",Toast.LENGTH_SHORT).show();
+                                swipeRefreshLayout.setRefreshing(false);
                             }
                         });
                     }
@@ -110,10 +151,12 @@ public class WeatherActivity extends AppCompatActivity {
                                             edit();
                                     editor.putString("weather", responseText);
                                     editor.apply();
+                                    mWeatherId = weather.getHeWeather6().get(0).getBasic().getCid();
                                     showWeatherInfo(weather);
                                 }else {
                                     Toast.makeText(WeatherActivity.this,"获取天气信息失败",Toast.LENGTH_SHORT).show();
                                 }
+                                swipeRefreshLayout.setRefreshing(false);
                             }
                         });
                     }
@@ -126,7 +169,7 @@ public class WeatherActivity extends AppCompatActivity {
     private void showWeatherInfo(Weather allWeather){
         Weather.HeWeather6Bean weather = allWeather.getHeWeather6().get(0);
         String cityName = weather.getBasic().getLocation();
-        String updateTime =weather.getUpdate().getLoc().split("")[1];
+        String updateTime =weather.getUpdate().getLoc().split(" ")[1];
         String degree = weather.getNow().getTmp()+"度";
         String weatherInfo = weather.getNow().getCond_txt();
         titleCity.setText(cityName);
@@ -161,6 +204,8 @@ public class WeatherActivity extends AppCompatActivity {
             suportText.setText(suport);
         }
         weatherLayout.setVisibility(View.VISIBLE);
+        Intent intent = new Intent(this, AutoUpdateService.class);
+        startService(intent);
     }
 
 
@@ -168,8 +213,8 @@ public class WeatherActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         super.onBackPressed();
-        Intent intent = new Intent(WeatherActivity.this, MyMainActivity.class);
-        startActivity(intent);
+//        Intent intent = new Intent(WeatherActivity.this, MyMainActivity.class);
+//        startActivity(intent);
     }
 
     private void loadBingPic(){
@@ -194,5 +239,23 @@ public class WeatherActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+
+        if(keyCode == KeyEvent.KEYCODE_BACK ) {
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.choose_area_by_drawer_fragment);
+            if(current.isVisible()){
+                //当左边的菜单栏是可见的，则关闭
+                drawerLayout.closeDrawers();
+                Log.d("ss","隐藏滑动菜单");
+            } else {
+                finish();
+            }
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 }
